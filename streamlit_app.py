@@ -5,10 +5,22 @@ import time
 import pandas as pd
 from langchain_openai.chat_models.base import ChatOpenAI
 
+# 确保安装并导入 openpyxl
+try:
+    import openpyxl
+except ImportError:
+    st.error("The `openpyxl` library is required to read Excel files. Please install it using `pip install openpyxl`.")
+
 # Streamlit sidebar for API keys
 st.sidebar.title("API Key Input")
-api_keys = st.sidebar.text_area("Enter your API keys, one per line:").split('\n')
-api_keys = [key.strip() for key in api_keys if key.strip()]
+api_keys = []
+
+num_keys = st.sidebar.number_input("Number of API keys", min_value=1, max_value=10, value=1, step=1)
+
+for i in range(num_keys):
+    api_key = st.sidebar.text_input(f"API Key {i+1}", type="password")
+    if api_key:
+        api_keys.append(api_key.strip())
 
 if not api_keys:
     st.sidebar.warning("Please enter at least one API key.")
@@ -27,7 +39,7 @@ def match_terms(text, terms):
 # 定义翻译函数
 def translate_sentence(sentence, api_key, matched_terms):
     llm = ChatOpenAI(model="gpt-4o", openai_api_key=api_key)
-    template = "你是中国救援队的随队翻译，是中英翻译专家，请将下面的中文翻译成适合外国专家阅读的英文，且仅输出最终的译文，如果原文有格式标记，也务必保留，翻译的时候严格参考以下术语表：{}。"
+    template = "你是一位资深翻译，是英中翻译专家，请将下面的英文翻译成适合外国专家阅读的中文，且仅输出最终的译文，如果原文有格式标记，也务必保留，翻译的时候严格参考以下术语表：{}。"
 
     term_pairs = ', '.join([f"{k}: {v}" for k, v in matched_terms.items()])
     full_template = template.format(term_pairs)
@@ -89,39 +101,42 @@ uploaded_sdlxliff = st.file_uploader("Upload SDLXLIFF File", type=["sdlxliff"])
 uploaded_terms = st.file_uploader("Upload Terms File", type=["xlsx"])
 
 if uploaded_sdlxliff and uploaded_terms and api_keys:
-    to_translate_texts = parse_sdlxliff(uploaded_sdlxliff)
-    terms = load_terms(uploaded_terms)
+    try:
+        to_translate_texts = parse_sdlxliff(uploaded_sdlxliff)
+        terms = load_terms(uploaded_terms)
 
-    # 统计待翻译的总数
-    total_to_translate = len(to_translate_texts)
-    st.write(f"总共有 {total_to_translate} 条待翻译的内容。")
+        # 统计待翻译的总数
+        total_to_translate = len(to_translate_texts)
+        st.write(f"总共有 {total_to_translate} 条待翻译的内容。")
 
-    # 使用多线程进行翻译
-    results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # 提交翻译任务
-        futures = {
-            executor.submit(translate_sentence, sentence, api_keys[i % len(api_keys)], match_terms(sentence, terms)): sentence
-            for i, sentence in enumerate(to_translate_texts)
-        }
+        # 使用多线程进行翻译
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # 提交翻译任务
+            futures = {
+                executor.submit(translate_sentence, sentence, api_keys[i % len(api_keys)], match_terms(sentence, terms)): sentence
+                for i, sentence in enumerate(to_translate_texts)
+            }
 
-        # 等待所有任务完成
-        for i, future in enumerate(concurrent.futures.as_completed(futures)):
-            source = futures[future]
-            translation = future.result()
-            matched_terms = match_terms(source, terms)
-            term_pairs = ', '.join([f"{k}: {v}" for k, v in matched_terms.items()])
-            results.append((source, translation, term_pairs))
+            # 等待所有任务完成
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                source = futures[future]
+                translation = future.result()
+                matched_terms = match_terms(source, terms)
+                term_pairs = ', '.join([f"{k}: {v}" for k, v in matched_terms.items()])
+                results.append((source, translation, term_pairs))
 
-            # 显示进度
-            st.write(f"翻译进度: {i + 1}/{total_to_translate} ({(i + 1) / total_to_translate * 100:.2f}%)")
+                # 显示进度
+                st.write(f"翻译进度: {i + 1}/{total_to_translate} ({(i + 1) / total_to_translate * 100:.2f}%)")
 
-    # 创建包含原文、译文和参考术语的Excel文件
-    df_results = pd.DataFrame(results, columns=['原文', '译文', '参考的术语'])
-    df_results.to_excel('translation_results.xlsx', index=False)
+        # 创建包含原文、译文和参考术语的Excel文件
+        df_results = pd.DataFrame(results, columns=['原文', '译文', '参考的术语'])
+        df_results.to_excel('translation_results.xlsx', index=False)
 
-    st.write("翻译结果已生成。")
-    st.download_button("下载翻译结果", data=df_results.to_excel(index=False), file_name="translation_results.xlsx")
+        st.write("翻译结果已生成。")
+        st.download_button("下载翻译结果", data=df_results.to_excel(index=False), file_name="translation_results.xlsx")
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
 else:
     if not api_keys:
         st.warning("请在左侧输入至少一个API密钥。")
