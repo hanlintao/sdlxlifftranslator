@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 import concurrent.futures
 import time
 import pandas as pd
+from io import BytesIO
 from langchain_openai.chat_models.base import ChatOpenAI
 
 # 确保安装并导入 openpyxl
@@ -131,10 +132,17 @@ if uploaded_sdlxliff and uploaded_terms and api_keys:
 
         # 创建包含原文、译文和参考术语的Excel文件
         df_results = pd.DataFrame(results, columns=['原文', '译文', '参考的术语'])
-        df_results.to_excel('translation_results.xlsx', index=False)
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_results.to_excel(writer, index=False)
 
         st.write("翻译结果已生成。")
-        st.download_button("下载翻译结果", data=df_results.to_excel(index=False), file_name="translation_results.xlsx")
+        st.download_button(
+            label="下载翻译结果",
+            data=excel_buffer.getvalue(),
+            file_name="translation_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     except Exception as e:
         st.error(f"An error occurred: {e}")
 else:
