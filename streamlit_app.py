@@ -28,7 +28,7 @@ if not api_keys:
 # 读取术语表
 def load_terms(file_path):
     df = pd.read_excel(file_path)
-    terms = dict(zip(df['term_zh'], df['term_en']))
+    terms = dict(zip(df['term_cn'], df['term_en']))
     return terms
 
 # 匹配术语表
