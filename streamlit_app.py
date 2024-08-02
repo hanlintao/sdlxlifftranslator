@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 import concurrent.futures
 import time
 import pandas as pd
+import os
 from io import BytesIO
 from langchain_openai.chat_models.base import ChatOpenAI
 
@@ -26,6 +27,14 @@ for i in range(num_keys):
 if not api_keys:
     st.sidebar.warning("Please enter at least one API key.")
 
+# 添加base_url输入框
+base_url = st.sidebar.text_input('请输入自定义的OpenAI Base URL (可选)', value='')
+
+# 添加模板输入框
+default_template = ("你是一位资深翻译，是英中翻译专家，请将下面的英文翻译成适合外国专家阅读的中文，"
+                    "且仅输出最终的译文，如果原文有格式标记，也务必保留，翻译的时候严格参考以下术语表：{}。")
+template = st.sidebar.text_area("修改翻译模板", value=default_template, height=150)
+
 # 读取术语表
 def load_terms(file_path):
     df = pd.read_excel(file_path)
@@ -38,10 +47,10 @@ def match_terms(text, terms):
     return matched_terms
 
 # 定义翻译函数
-def translate_sentence(sentence, api_key, matched_terms):
+def translate_sentence(sentence, api_key, base_url, template, matched_terms):
+    if base_url:
+        os.environ["OPENAI_BASE_URL"] = base_url
     llm = ChatOpenAI(model="gpt-4o", openai_api_key=api_key)
-    template = "你是一位资深翻译，是英中翻译专家，请将下面的英文翻译成适合外国专家阅读的中文，且仅输出最终的译文，如果原文有格式标记，也务必保留，翻译的时候严格参考以下术语表：{}。"
-
     term_pairs = ', '.join([f"{k}: {v}" for k, v in matched_terms.items()])
     full_template = template.format(term_pairs)
 
@@ -115,7 +124,7 @@ if uploaded_sdlxliff and uploaded_terms and api_keys:
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             # 提交翻译任务
             futures = {
-                executor.submit(translate_sentence, sentence, api_keys[i % len(api_keys)], match_terms(sentence, terms)): sentence
+                executor.submit(translate_sentence, sentence, api_keys[i % len(api_keys)], base_url, template, match_terms(sentence, terms)): sentence
                 for i, sentence in enumerate(to_translate_texts)
             }
 
